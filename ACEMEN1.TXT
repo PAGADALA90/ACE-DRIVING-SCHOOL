@@ -1,0 +1,88 @@
+       IDENTIFICATION DIVISION.                                         00010000
+       PROGRAM-ID. ACEMEN1.                                             00020015
+       ENVIRONMENT DIVISION.                                            00030000
+       DATA DIVISION.                                                   00040000
+       WORKING-STORAGE SECTION.                                         00050000
+       01 WS-COMMAREA.                                                  00050109
+          05 CA-FIRST-TIME   PIC X(01) VALUE 'Y'.                       00050209
+       01 WS-OPTION          PIC X(01) VALUE SPACES.                    00050609
+       01 WS-ERR-MSG         PIC X(50) VALUE SPACES.                    00050713
+       01 WS-ABSTIME         PIC S9(15) COMP-3 VALUE ZEROS.             00050822
+       01 WS-FMTDATE         PIC X(10)  VALUE SPACES.                   00050922
+            COPY DFHBMSCA.                                              00051003
+            COPY DFHAID.                                                00051101
+            COPY CAPST.                                                 00052014
+       LINKAGE SECTION.                                                 00053009
+       01 DFHCOMMAREA      PIC X(01).                                   00054009
+       PROCEDURE DIVISION.                                              00080000
+       0000-MAIN.                                                       00090009
+            IF EIBCALEN = ZERO                                          00100009
+               MOVE 'Y' TO CA-FIRST-TIME                                00110009
+            ELSE                                                        00111009
+               MOVE DFHCOMMAREA TO WS-COMMAREA                          00112009
+            END-IF                                                      00113009
+            PERFORM 8000-GET-DATE                                       00114024
+            EVALUATE TRUE                                               00120009
+                WHEN CA-FIRST-TIME = 'Y'                                00130009
+                     PERFORM 1000-SEND-MENU                             00140009
+            WHEN EIBAID = DFHPF3                                        00320009
+                 EXEC CICS RETURN END-EXEC                              00330009
+            WHEN EIBAID = DFHENTER                                      00340009
+                PERFORM 2000-PROCESS-OPTION                             00341009
+            WHEN OTHER                                                  00350009
+              MOVE 'INVALID KEY - PRESS ENTER TO SELECT OR PF3 TO EXIT' 00360009
+                    TO WS-ERR-MSG                                       00370019
+              PERFORM 1000-SEND-MENU                                    00371009
+            END-EVALUATE                                                00372009
+            STOP RUN.                                                   00373009
+       1000-SEND-MENU.                                                  00374009
+            MOVE LOW-VALUES TO MENUN1O                                  00375009
+            MOVE 'N'    TO CA-FIRST-TIME                                00376009
+            MOVE WS-FMTDATE TO MDATEO                                   00376122
+            IF WS-ERR-MSG NOT = SPACES                                  00376213
+               MOVE WS-ERR-MSG TO MMSGO                                 00376313
+               MOVE SPACES TO WS-ERR-MSG                                00376420
+            END-IF                                                      00376513
+            MOVE -1 TO MOPTL                                            00376623
+            EXEC CICS SEND                                              00377009
+                MAP  ('MENUN1')                                         00378009
+                MAPSET  ('CAPST')                                       00379014
+                FROM   (MENUN1O)                                        00380009
+                CURSOR                                                  00381022
+                ERASE                                                   00390009
+            END-EXEC                                                    00400009
+            EXEC CICS RETURN                                            00410009
+                TRANSID ('N3G3')                                        00420024
+                COMMAREA (WS-COMMAREA)                                  00430009
+                LENGTH (LENGTH OF WS-COMMAREA)                          00440009
+            END-EXEC.                                                   00450009
+       2000-PROCESS-OPTION.                                             00460009
+            EXEC CICS RECEIVE                                           00470009
+                 MAP ('MENUN1')                                         00480009
+                 MAPSET('CAPST')                                        00490014
+                 INTO(MENUN1I)                                          00500009
+            END-EXEC                                                    00510009
+            MOVE MOPTI TO WS-OPTION                                     00520009
+            EVALUATE WS-OPTION                                          00530009
+               WHEN '1'                                                 00540009
+                  EXEC CICS XCTL                                        00550009
+                       PROGRAM ('ACEMAINT')                             00560009
+                  END-EXEC                                              00590009
+               WHEN '2'                                                 00600009
+                  EXEC CICS XCTL                                        00610009
+                       PROGRAM ('ACEINQ')                               00620009
+                  END-EXEC                                              00650009
+               WHEN OTHER                                               00660009
+                  MOVE 'PLEASE ENTER 1 OR 2 ONLY' TO WS-ERR-MSG         00670019
+                  PERFORM 1000-SEND-MENU                                00680009
+               END-EVALUATE                                             00690009
+               STOP RUN.                                                00700009
+       8000-GET-DATE.                                                   00710022
+                    EXEC CICS ASKTIME                                   00730022
+                         ABSTIME (WS-ABSTIME)                           00740022
+                    END-EXEC                                            00750022
+                    EXEC CICS FORMATTIME                                00760022
+                         ABSTIME (WS-ABSTIME)                           00770022
+                         DDMMYYYY(WS-FMTDATE)                           00780023
+                         DATESEP('/')                                   00790023
+                    END-EXEC.                                           00800022

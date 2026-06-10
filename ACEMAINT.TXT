@@ -1,0 +1,370 @@
+       IDENTIFICATION DIVISION.                                         00010000
+       PROGRAM-ID. ACEMAINT.                                            00020000
+       ENVIRONMENT DIVISION.                                            00030000
+       DATA DIVISION.                                                   00040000
+       WORKING-STORAGE SECTION.                                         00050000
+       01 WS-COMMAREA.                                                  00060004
+          05 CA-FIRST-TIME      PIC X(01) VALUE 'Y'.                    00070004
+          05 CA-MODE            PIC X(01) VALUE SPACES.                 00080004
+             88 CA-ADD          VALUE 'A'.                              00090004
+             88 CA-MOD          VALUE 'M'.                              00100004
+          05 CA-STUNUM          PIC 9(05) VALUE ZEROS.                  00110004
+       01 WS-STU-REC.                                                   00120004
+          05 WR-STUNUM        PIC 9(05).                                00130004
+          05 FILLER           PIC X.                                    00131006
+          05 WR-NAME          PIC X(20).                                00140004
+          05 FILLER           PIC X.                                    00141006
+          05 WR-ADDR          PIC X(20).                                00150004
+          05 FILLER           PIC X.                                    00151006
+          05 WR-SDATE         PIC X(10).                                00160004
+          05 FILLER           PIC X.                                    00161006
+          05 WR-INSTNO        PIC X(05).                                00170004
+          05 FILLER           PIC X.                                    00171006
+          05 WR-STAT          PIC X(01).                                00180004
+          05 FILLER           PIC X.                                    00181006
+          05 WR-PDATE         PIC X(10).                                00190004
+          05 FILLER           PIC X(03).                                00200006
+       01 WS-RESP             PIC S9(08) COMP VALUE ZEROS.              00210004
+       01 WS-ABSTIME          PIC S9(15) COMP-3 VALUE ZEROS.            00220004
+       01 WS-FMTDATE          PIC X(10) VALUE SPACES.                   00220122
+       01 WS-RECLEN           PIC S9(04) COMP VALUE 80.                 00220213
+       01 WS-KEY-MSG          PIC X(50) VALUE  SPACES.                  00220324
+       01 WS-DTL-MSG          PIC X(50) VALUE  SPACES.                  00220424
+       01 WS-VALID-FLAG       PIC X(01) VALUE 'Y'.                      00220525
+       01 WS-STUNUM-DISP      PIC Z(5) VALUE ZEROS.                     00220626
+          COPY DFHBMSCA.                                                00221004
+          COPY DFHAID.                                                  00222004
+          COPY CAPST.                                                   00230007
+       LINKAGE SECTION.                                                 00240004
+       01  DFHCOMMAREA        PIC X(07).                                00250004
+       PROCEDURE DIVISION.                                              00260004
+       0000-MAIN.                                                       00270004
+            PERFORM 8000-GET-DATE                                       00271006
+            IF EIBCALEN = ZERO                                          00280004
+              MOVE 'Y' TO CA-FIRST-TIME                                 00290004
+              MOVE SPACES TO CA-MODE                                    00291013
+              MOVE ZEROS TO CA-STUNUM                                   00292013
+            ELSE                                                        00300004
+              MOVE DFHCOMMAREA TO WS-COMMAREA                           00310004
+            END-IF                                                      00320016
+            EVALUATE TRUE                                               00330004
+               WHEN CA-FIRST-TIME = 'Y'                                 00340004
+                    PERFORM 1000-SEND-KEY-MAP                           00350004
+               WHEN EIBAID  = DFHPF3                                    00360004
+                   EXEC CICS XCTL                                       00370004
+                      PROGRAM ('ACEMEN1')                               00380013
+                   END-EXEC                                             00390009
+               WHEN EIBAID = DFHENTER                                   00420004
+                   IF CA-MODE = SPACES                                  00430004
+                      PERFORM 2000-RECV-KEY-MAP                         00440004
+                   ELSE                                                 00450004
+                      PERFORM 3000-RECV-DETAIL-PF2                      00460022
+                   END-IF                                               00470004
+               WHEN EIBAID = DFHPF2                                     00480004
+                     PERFORM 3000-RECV-DETAIL-PF2                       00492022
+               WHEN EIBAID = DFHPF4                                     00500004
+                   PERFORM 4000-DELETE-RECORD                           00510004
+               WHEN OTHER                                               00520004
+                   MOVE 'INVALID KEY - USE ENTER PF2 PF3 PF4 ONLY'      00530004
+                     TO WS-KEY-MSG                                      00540024
+                   PERFORM 1000-SEND-KEY-MAP                            00550016
+            END-EVALUATE                                                00560004
+            STOP RUN.                                                   00570016
+       1000-SEND-KEY-MAP.                                               00580004
+            MOVE LOW-VALUES TO KEYMAP1O                                 00590004
+            MOVE 'N'  TO CA-FIRST-TIME                                  00600004
+            MOVE SPACES  TO CA-MODE                                     00610004
+            MOVE WS-FMTDATE TO KDATEO                                   00611023
+            IF WS-KEY-MSG NOT = SPACES                                  00612024
+               MOVE WS-KEY-MSG TO MSG2O                                 00613024
+               MOVE SPACES TO WS-KEY-MSG                                00614024
+            END-IF                                                      00615024
+            IF CA-STUNUM > ZEROS                                        00620004
+               MOVE CA-STUNUM TO STUNUMO                                00630004
+            END-IF                                                      00640004
+            MOVE -1 TO STUNUML                                          00641024
+            EXEC CICS SEND                                              00650004
+                 MAP('KEYMAP1')                                         00660004
+                 MAPSET('CAPST')                                        00670007
+                 FROM(KEYMAP1O)                                         00680004
+                 CURSOR                                                 00690024
+                 ERASE                                                  00691024
+            END-EXEC                                                    00700004
+            EXEC CICS RETURN                                            00710004
+                 TRANSID ('OZKT')                                       00720025
+                 COMMAREA (WS-COMMAREA)                                 00730004
+                 LENGTH (LENGTH OF WS-COMMAREA)                         00740004
+            END-EXEC.                                                   00750004
+       2000-RECV-KEY-MAP.                                               00760004
+            EXEC CICS RECEIVE                                           00770004
+                 MAP('KEYMAP1')                                         00780004
+                 MAPSET('CAPST')                                        00790007
+                 INTO(KEYMAP1I)                                         00800004
+            END-EXEC                                                    00810004
+            IF STUNUML = ZERO                                           00811008
+            OR STUNUMI = SPACES                                         00812008
+            OR STUNUMI = LOW-VALUES                                     00813008
+               MOVE 'STUDENT NUMBER CANNOT BE BLANK'                    00830004
+                  TO WS-KEY-MSG                                         00840024
+               PERFORM 1000-SEND-KEY-MAP                                00850004
+               STOP RUN                                                 00860004
+            END-IF                                                      00870004
+            MOVE STUNUMI  TO WR-STUNUM                                  00880004
+            MOVE WR-STUNUM TO CA-STUNUM                                 00890004
+            EXEC CICS READ                                              00900004
+                 FILE('STUDENT1')                                       00910016
+                 INTO(WS-STU-REC)                                       00920004
+                 RIDFLD(WR-STUNUM)                                      00930004
+                 LENGTH(WS-RECLEN)                                      00931013
+                 RESP(WS-RESP)                                          00940004
+            END-EXEC                                                    00950004
+            EVALUATE WS-RESP                                            00960004
+                WHEN DFHRESP(NORMAL)                                    00970004
+                   MOVE 'M' TO CA-MODE                                  00980004
+                   PERFORM 6000-SEND-DTL-MOD                            00990004
+                WHEN DFHRESP(NOTFND)                                    01000004
+                   MOVE 'A' TO CA-MODE                                  01010004
+                   MOVE SPACES    TO WS-STU-REC                         01020023
+                   MOVE CA-STUNUM TO WR-STUNUM                          01030008
+                   PERFORM 5000-SEND-DTL-ADD                            01040004
+                WHEN OTHER                                              01050004
+                   MOVE 'FILE READ ERROR - CONTACT SUPPORT'             01060024
+                      TO WS-KEY-MSG                                     01061024
+                   PERFORM 1000-SEND-KEY-MAP                            01070004
+            END-EVALUATE                                                01080004
+            STOP RUN.                                                   01090004
+       3000-RECV-DETAIL-PF2.                                            01100022
+            MOVE SPACES TO WS-DTL-MSG                                   01101024
+            EXEC CICS RECEIVE                                           01110004
+                MAP('DTLMAP1')                                          01120022
+                MAPSET('CAPST')                                         01130007
+                INTO(DTLMAP1I)                                          01140022
+                RESP(WS-RESP)                                           01141014
+            END-EXEC                                                    01150004
+            IF WS-RESP = DFHRESP(MAPFAIL)                               01151014
+               IF CA-ADD                                                01151127
+               PERFORM 5000-SEND-DTL-ADD                                01152027
+               ELSE                                                     01152127
+               PERFORM 6000-SEND-DTL-MOD                                01152227
+               END-IF                                                   01152327
+               STOP RUN                                                 01153014
+            END-IF                                                      01154014
+            PERFORM 7000-VALIDATE-FIELDS                                01160004
+            IF WS-VALID-FLAG = 'N'                                      01160125
+              IF CA-ADD                                                 01161025
+                PERFORM 5000-SEND-DTL-ADD                               01162025
+              ELSE                                                      01163025
+                PERFORM 6000-SEND-DTL-MOD                               01164025
+              END-IF                                                    01165025
+            STOP RUN                                                    01166025
+            END-IF                                                      01167025
+            MOVE CA-STUNUM    TO WR-STUNUM                              01250004
+            MOVE DNAMEI      TO WR-NAME                                 01260022
+            MOVE DADDRI      TO WR-ADDR                                 01270022
+            MOVE DSDATEI     TO WR-SDATE                                01280022
+            MOVE DINSTNOI     TO WR-INSTNO                              01290022
+            MOVE DSTATI      TO WR-STAT                                 01300022
+            MOVE DPDATEI     TO WR-PDATE                                01310022
+            IF CA-ADD                                                   01320004
+               PERFORM 3100-WRITE-NEW-RECORD                            01330004
+            ELSE                                                        01340004
+               PERFORM 3200-REWRITE-RECORD                              01350004
+            END-IF                                                      01360004
+            STOP RUN.                                                   01370004
+       3100-WRITE-NEW-RECORD.                                           01380004
+            EXEC CICS WRITE                                             01390004
+                FILE('STUDENT1')                                        01400016
+                FROM(WS-STU-REC)                                        01410004
+                RIDFLD(WR-STUNUM)                                       01420004
+                LENGTH(WS-RECLEN)                                       01421013
+                RESP(WS-RESP)                                           01430004
+            END-EXEC                                                    01440004
+            IF WS-RESP = DFHRESP(NORMAL)                                01450004
+               MOVE 'RECORD ADDED SUCCESSFULLY ' TO WS-KEY-MSG          01460024
+               MOVE SPACES TO CA-MODE                                   01461022
+               MOVE ZEROS TO CA-STUNUM                                  01462023
+               PERFORM 1000-SEND-KEY-MAP                                01470022
+            ELSE                                                        01480022
+                MOVE 'DUPLICATE RECORD - STUDENT NUMBER ALREADY EXISTS' 01481019
+                   TO WS-DTL-MSG                                        01482024
+                                                                        01490019
+               PERFORM 5000-SEND-DTL-ADD                                01491018
+            END-IF.                                                     01491122
+       3200-REWRITE-RECORD.                                             01530004
+            EXEC CICS READ                                              01540008
+                FILE ('STUDENT1')                                       01550016
+                INTO(WS-STU-REC)                                        01560008
+                RIDFLD(CA-STUNUM)                                       01561008
+                UPDATE                                                  01562008
+                LENGTH(WS-RECLEN)                                       01563013
+                RESP(WS-RESP)                                           01570004
+            END-EXEC                                                    01580004
+            IF WS-RESP NOT  = DFHRESP(NORMAL)                           01590018
+                MOVE 'READ UPDATE FAILED - PLEASE RETRY' TO WS-DTL-MSG  01600024
+                PERFORM 6000-SEND-DTL-MOD                               01610016
+                STOP RUN                                                01621018
+            END-IF                                                      01621118
+            MOVE CA-STUNUM TO WR-STUNUM                                 01622008
+            IF DNAMEI NOT = SPACES AND DNAMEI NOT = LOW-VALUES          01622127
+            MOVE DNAMEI TO WR-NAME                                      01623022
+            END-IF                                                      01623127
+            IF DADDRI NOT = SPACES AND DADDRI NOT = LOW-VALUES          01623227
+            MOVE DADDRI TO WR-ADDR                                      01624022
+            END-IF                                                      01624127
+            IF   DSDATEI NOT = SPACES AND DSDATEI NOT = LOW-VALUES      01624227
+            MOVE DSDATEI TO WR-SDATE                                    01625022
+            END-IF                                                      01625127
+            IF DINSTNOI NOT = SPACES AND DINSTNOI NOT = LOW-VALUES      01625227
+            MOVE DINSTNOI TO WR-INSTNO                                  01626022
+            END-IF                                                      01626127
+            IF   DSTATI NOT = SPACES AND DSTATI NOT = LOW-VALUES        01626227
+            MOVE DSTATI TO WR-STAT                                      01627022
+            END-IF                                                      01627127
+            IF DPDATEI NOT = SPACES AND DPDATEI NOT = LOW-VALUES        01627227
+            MOVE DPDATEI TO WR-PDATE                                    01628022
+            END-IF                                                      01628127
+            EXEC CICS REWRITE                                           01629008
+                 FILE('STUDENT1')                                       01629116
+                 FROM(WS-STU-REC)                                       01629208
+                 LENGTH(WS-RECLEN)                                      01629313
+                 RESP (WS-RESP)                                         01629408
+            END-EXEC                                                    01629508
+            IF WS-RESP = DFHRESP(NORMAL)                                01629616
+                MOVE 'RECORD MODIFIED SUCCESSFULLY' TO WS-KEY-MSG       01630024
+                MOVE SPACES TO CA-MODE                                  01631022
+                PERFORM 1000-SEND-KEY-MAP                               01640022
+            ELSE                                                        01641008
+               MOVE 'MODIFY FAILED - PLEASE RETRY' TO WS-DTL-MSG        01642024
+               PERFORM 6000-SEND-DTL-MOD                                01643008
+            END-IF.                                                     01650004
+       4000-DELETE-RECORD.                                              01660004
+           IF CA-STUNUM = ZEROS                                         01670010
+              MOVE 'ENTER STUDENT NUMBER BEFORE DELETE' TO WS-KEY-MSG   01680024
+              PERFORM 1000-SEND-KEY-MAP                                 01690010
+              STOP RUN                                                  01700010
+            END-IF                                                      01710010
+            EXEC CICS DELETE                                            01720004
+                 FILE('STUDENT1')                                       01730016
+                 RIDFLD (CA-STUNUM)                                     01740004
+                 RESP(WS-RESP)                                          01750004
+            END-EXEC                                                    01760004
+            IF WS-RESP = DFHRESP(NORMAL)                                01770004
+               MOVE 'RECORD DELETED SUCCESSFULLY' TO WS-KEY-MSG         01780024
+               MOVE ZEROS TO CA-STUNUM                                  01790004
+               MOVE ZEROS TO CA-MODE                                    01791010
+               PERFORM 1000-SEND-KEY-MAP                                01800004
+            ELSE                                                        01810022
+               MOVE 'DELETE FAILED - RECORD MAY NOT EXIST' TO WS-KEY-MSG01820024
+               PERFORM 1000-SEND-KEY-MAP                                01830004
+            END-IF                                                      01840004
+            STOP RUN.                                                   01850004
+       5000-SEND-DTL-ADD.                                               01860004
+            MOVE LOW-VALUES TO DTLMAP1O                                 01870022
+            MOVE CA-STUNUM TO DSTUNOO                                   01880022
+            MOVE WR-NAME TO DNAMEO                                      01881122
+            MOVE WR-ADDR  TO DADDRO                                     01881222
+            MOVE WR-SDATE TO DSDATEO                                    01881322
+            MOVE WR-INSTNO TO DINSTNOO                                  01881422
+            MOVE WR-STAT TO DSTATO                                      01881522
+            MOVE WR-PDATE TO DPDATEO                                    01881622
+                                                                        01881724
+            IF WS-DTL-MSG NOT  = SPACES                                 01881827
+               MOVE WS-DTL-MSG TO MSG3O                                 01881924
+               MOVE SPACES TO WS-DTL-MSG                                01882024
+            ELSE                                                        01882125
+            MOVE 'ADD MODE - ENTER DATA AND PRESS PF2' TO MSG3O         01882224
+            END-IF                                                      01883015
+            MOVE -1 TO DNAMEL                                           01884024
+            EXEC CICS SEND                                              01890004
+                 MAP('DTLMAP1')                                         01900004
+                 MAPSET('CAPST')                                        01910007
+                 FROM(DTLMAP1O)                                         01920004
+                 CURSOR                                                 01930024
+                 ERASE                                                  01931024
+            END-EXEC                                                    01940004
+            EXEC CICS RETURN                                            01950004
+                 TRANSID('OZKT')                                        01960025
+                 COMMAREA(WS-COMMAREA)                                  01970004
+                 LENGTH (LENGTH OF WS-COMMAREA)                         01980004
+            END-EXEC.                                                   01990004
+       6000-SEND-DTL-MOD.                                               02000004
+            MOVE LOW-VALUES  TO DTLMAP1O                                02010022
+            MOVE WS-FMTDATE  TO DDATEO                                  02011023
+            MOVE CA-STUNUM   TO DSTUNOO                                 02020022
+            MOVE WR-NAME     TO DNAMEO                                  02030022
+            MOVE WR-ADDR     TO DADDRO                                  02040022
+            MOVE WR-SDATE    TO DSDATEO                                 02050022
+            MOVE WR-INSTNO   TO DINSTNOO                                02060022
+            MOVE WR-STAT     TO DSTATO                                  02070022
+            MOVE WR-PDATE    TO DPDATEO                                 02080022
+            IF WS-DTL-MSG NOT = SPACES                                  02082026
+               MOVE WS-DTL-MSG TO MSG3O                                 02082124
+               MOVE SPACES TO WS-DTL-MSG                                02082224
+            ELSE                                                        02082324
+               MOVE 'MODIFY/DEL MODE : PF2=SAVE PF4=DELETE PF3=BACK'    02083022
+                 TO MSG3O                                               02084024
+            END-IF                                                      02085013
+            MOVE -1 TO DNAMEL                                           02086024
+            EXEC CICS SEND                                              02090004
+                 MAP('DTLMAP1')                                         02100004
+                 MAPSET('CAPST')                                        02110007
+                 FROM(DTLMAP1O)                                         02120022
+                 CURSOR                                                 02130024
+                 ERASE                                                  02131024
+            END-EXEC                                                    02140004
+            EXEC CICS RETURN                                            02150004
+                 TRANSID ('OZMT')                                       02160013
+                 COMMAREA(WS-COMMAREA)                                  02170004
+                 LENGTH (LENGTH OF WS-COMMAREA)                         02180004
+            END-EXEC.                                                   02190004
+       7000-VALIDATE-FIELDS.                                            02200004
+            MOVE 'Y' TO WS-VALID-FLAG                                   02201026
+            MOVE SPACES TO WS-DTL-MSG                                   02202025
+            IF DNAMEI = SPACES OR DNAMEI = LOW-VALUES                   02220022
+                MOVE 'NAME CANNOT BE BLANK' TO WS-DTL-MSG               02230024
+                MOVE 'N' TO WS-VALID-FLAG                               02231025
+                GO TO 7000-EXIT                                         02232025
+            END-IF                                                      02240004
+            IF DADDRI = SPACES OR DADDRI = LOW-VALUES                   02250022
+                MOVE 'ADDRESS CANNOT BE BLANK' TO WS-DTL-MSG            02260024
+                MOVE 'N' TO WS-VALID-FLAG                               02261025
+                GO TO 7000-EXIT                                         02262025
+            END-IF                                                      02270004
+            IF DSDATEI = SPACES OR DSDATEI = LOW-VALUES                 02280022
+               MOVE 'START DATE CANNOT BE BLANK' TO WS-DTL-MSG          02290024
+               MOVE 'N' TO WS-VALID-FLAG                                02291025
+               GO TO 7000-EXIT                                          02292025
+            END-IF                                                      02300004
+            IF DINSTNOI = SPACES OR DINSTNOI = LOW-VALUES               02310022
+               MOVE 'INSTRUCTOR NO CANNOT BE BLANK' TO WS-DTL-MSG       02320024
+               MOVE 'N' TO WS-VALID-FLAG                                02321025
+               GO TO 7000-EXIT                                          02322025
+            END-IF                                                      02330004
+            IF DSTATI = SPACES OR DSTATI = LOW-VALUES                   02340022
+                MOVE 'STATUS CANNOT BE BLANK' TO WS-DTL-MSG             02350024
+                MOVE 'N' TO WS-VALID-FLAG                               02351025
+                GO TO 7000-EXIT                                         02352025
+            END-IF                                                      02360005
+            IF DSTATI NOT = 'P'                                         02361022
+            AND DSTATI NOT = 'F'                                        02362022
+            AND DSTATI NOT = 'C'                                        02363022
+                MOVE 'STATUS MUST BE P (PASS) F (FAIL) C (CLASS)'       02364022
+                   TO WS-DTL-MSG                                        02365024
+            MOVE 'N' TO WS-VALID-FLAG                                   02366025
+            GO TO 7000-EXIT                                             02366125
+            END-IF                                                      02367022
+            IF DPDATEI = SPACES OR DPDATEI = LOW-VALUES                 02370022
+               MOVE 'STATUS DATE CANNOT BE BLANK' TO WS-DTL-MSG         02380024
+               MOVE 'N' TO WS-VALID-FLAG                                02381025
+            END-IF.                                                     02390005
+       7000-EXIT.                                                       02391025
+            EXIT.                                                       02392025
+       8000-GET-DATE.                                                   02400006
+            EXEC CICS ASKTIME                                           02410006
+                 ABSTIME (WS-ABSTIME)                                   02420006
+            END-EXEC                                                    02430006
+            EXEC CICS FORMATTIME                                        02440006
+                 ABSTIME (WS-ABSTIME)                                   02450006
+                 YYYYMMDD(WS-FMTDATE)                                   02460023
+                 DATESEP ('/')                                          02470027
+            END-EXEC.                                                   02480006

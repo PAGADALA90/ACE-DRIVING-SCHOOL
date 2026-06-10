@@ -1,0 +1,356 @@
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. ACEINQ.
+       ENVIRONMENT DIVISION.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01  WS-COMMAREA.
+           05 CA-FIRST-TIME     PIC X(01) VALUE 'Y'.
+           05 CA-BROWSE-ON      PIC X(01) VALUE 'N'.
+           05 CA-CURR-KEY       PIC 9(05) VALUE ZEROS.
+       01  WS-STU-REC.
+           05 WR-STUNUM         PIC 9(05).
+           05 FILLER            PIC X.
+           05 WR-NAME           PIC X(20).
+           05 FILLER            PIC X.
+           05 WR-ADDR           PIC X(20).
+           05 FILLER            PIC X.
+           05 WR-SDATE          PIC X(10).
+           05 FILLER            PIC X.
+           05 WR-INSTNO         PIC X(05).
+           05 FILLER            PIC X.
+           05 WR-STAT           PIC X(01).
+           05 FILLER            PIC X.
+           05 WR-PDATE          PIC X(10).
+           05 FILLER            PIC X(03).
+       01  WS-RESP              PIC S9(08) COMP VALUE ZEROS.
+       01  WS-RIDFLD            PIC 9(05)  VALUE ZEROS.
+       01  WS-HIGH-KEY          PIC 9(05)  VALUE 99999.
+       01  WS-ABSTIME           PIC S9(15) COMP-3 VALUE ZEROS.
+       01  WS-FMTDATE           PIC X(10)   VALUE SPACES.
+       01  WS-RECLEN            PIC S9(04) COMP VALUE 80.
+       01  WS-INQ-MSG           PIC X(50)  VALUE SPACES.
+            COPY DFHBMSCA.
+            COPY DFHAID.
+            COPY CAPST.
+       LINKAGE SECTION.
+       01 DFHCOMMAREA           PIC X(07).
+       PROCEDURE DIVISION.
+       0000-MAIN.
+           PERFORM 8000-GET-DATE
+           IF EIBCALEN = ZERO
+              MOVE 'Y' TO CA-FIRST-TIME
+              MOVE 'N' TO CA-BROWSE-ON
+              MOVE ZEROS TO CA-CURR-KEY
+           ELSE
+              MOVE DFHCOMMAREA TO WS-COMMAREA
+           END-IF
+           EVALUATE TRUE
+                WHEN CA-FIRST-TIME = 'Y'
+                     PERFORM 1000-SEND-BLANK
+                WHEN EIBAID = DFHPF3
+                     PERFORM 9000-EXIT-TO-MENU
+                WHEN EIBAID = DFHENTER
+                     PERFORM 2000-DIRECT-READ
+                WHEN EIBAID = DFHPF4
+                     PERFORM 3000-FIRST-RECORD
+                WHEN EIBAID = DFHPF5
+                     PERFORM 4000-LAST-RECORD
+                WHEN EIBAID = DFHPF7
+                     PERFORM 5000-PREV-RECORD
+                WHEN EIBAID = DFHPF8
+                     PERFORM 6000-NEXT-RECORD
+                WHEN OTHER
+                     MOVE 'INVALID KEY: USE PF3 PF4 PF5 PF7 PF8 ENTER'
+                            TO WS-INQ-MSG
+                      PERFORM 7000-SEND-DETAIL
+                END-EVALUATE
+                STOP RUN.
+       1000-SEND-BLANK.
+                MOVE LOW-VALUES TO INQMAP1O
+                MOVE 'N'  TO CA-FIRST-TIME
+                MOVE WS-FMTDATE TO IDATEO
+                MOVE 'ENTER STUDENT NO + ENTER,  PF4=FIRST PF5=LAST'
+                     TO IMSGO
+                MOVE -1 TO ISRCHNOL
+                EXEC CICS SEND
+                     MAP('INQMAP1')
+                     MAPSET('CAPST')
+                     FROM(INQMAP1O)
+                     CURSOR
+                     ERASE
+                END-EXEC
+                EXEC CICS RETURN
+                     TRANSID ('OZKQ')
+                     COMMAREA (WS-COMMAREA)
+                     LENGTH (LENGTH OF WS-COMMAREA)
+                END-EXEC.
+       2000-DIRECT-READ.
+               EXEC CICS RECEIVE
+                    MAP('INQMAP1')
+                    MAPSET('CAPST')
+                    INTO(INQMAP1I)
+               END-EXEC
+               IF ISRCHNOI = SPACES OR ISRCHNOI = LOW-VALUES
+                 MOVE 'ENTER A STUDENT NUMBER FIRST' TO WS-INQ-MSG
+                 PERFORM 7000-SEND-DETAIL
+                 STOP RUN
+               END-IF
+               MOVE ISRCHNOI TO WS-RIDFLD
+               EXEC CICS READ
+                   FILE('STUDENT1')
+                   INTO(WS-STU-REC)
+                   RIDFLD(WS-RIDFLD)
+                   LENGTH(WS-RECLEN)
+                   RESP(WS-RESP)
+               END-EXEC
+               IF WS-RESP = DFHRESP(NORMAL)
+                  MOVE WS-RIDFLD TO CA-CURR-KEY
+                  MOVE 'N'  TO CA-BROWSE-ON
+                  MOVE 'RECORD FOUND - USE PF7/PF8 TO BROWSE'
+                         TO WS-INQ-MSG
+                  PERFORM 7000-SEND-DETAIL
+               ELSE
+                  MOVE 'RECORD NOT FOUND' TO WS-INQ-MSG
+                  PERFORM 7000-SEND-DETAIL
+               END-IF
+               STOP RUN.
+       3000-FIRST-RECORD.
+                IF CA-BROWSE-ON = 'Y'
+                   EXEC CICS ENDBR
+                       FILE('STUDENT1')
+                       RESP(WS-RESP)
+                   END-EXEC
+                END-IF
+                MOVE ZEROS TO WS-RIDFLD
+                EXEC CICS STARTBR
+                     FILE ('STUDENT1')
+                     RIDFLD(WS-RIDFLD)
+                     GTEQ
+                     RESP(WS-RESP)
+                END-EXEC
+                IF WS-RESP NOT = DFHRESP(NORMAL)
+                MOVE 'CANNOT START BROWSE - FILE MAYBE EMPTY'
+                            TO WS-INQ-MSG
+                PERFORM 7000-SEND-DETAIL
+                STOP RUN
+                END-IF
+                EXEC CICS READNEXT
+                     FILE ('STUDENT1')
+                     INTO (WS-STU-REC)
+                     RIDFLD(WS-RIDFLD)
+                     LENGTH(WS-RECLEN)
+                     RESP(WS-RESP)
+                END-EXEC
+                IF WS-RESP = DFHRESP(NORMAL)
+                   MOVE 'Y' TO CA-BROWSE-ON
+                   MOVE WS-RIDFLD TO CA-CURR-KEY
+                   MOVE '** FIRST RECORD **' TO WS-INQ-MSG
+                   PERFORM 7000-SEND-DETAIL
+                ELSE
+                   MOVE 'NO RECORDS IN FILE' TO WS-INQ-MSG
+                   PERFORM 7000-SEND-DETAIL
+                END-IF
+                STOP RUN.
+       4000-LAST-RECORD.
+                MOVE ZEROS TO WS-RIDFLD
+                MOVE ZEROS TO CA-CURR-KEY
+                EXEC CICS STARTBR
+                     FILE ('STUDENT1')
+                     RIDFLD(WS-RIDFLD)
+                     GTEQ
+                     RESP(WS-RESP)
+                END-EXEC
+                IF WS-RESP NOT  = DFHRESP(NORMAL)
+                   MOVE 'FILE IS EMPTY' TO WS-INQ-MSG
+                   MOVE 'N' TO CA-BROWSE-ON
+                   PERFORM 7000-SEND-DETAIL
+                   STOP RUN
+                END-IF.
+       4100-LAST-LOOP.
+                EXEC CICS READNEXT
+                     FILE('STUDENT1')
+                     INTO(WS-STU-REC)
+                     RIDFLD(WS-RIDFLD)
+                     LENGTH(WS-RECLEN)
+                     RESP(WS-RESP)
+                END-EXEC
+                IF WS-RESP = DFHRESP(NORMAL)
+                   MOVE WS-RIDFLD TO CA-CURR-KEY
+                   GO TO 4100-LAST-LOOP
+                END-IF.
+                EXEC CICS ENDBR
+                     FILE('STUDENT1')
+                     RESP(WS-RESP)
+                END-EXEC
+                MOVE CA-CURR-KEY TO WS-RIDFLD
+                EXEC CICS READ
+                     FILE('STUDENT1')
+                     INTO(WS-STU-REC)
+                     RIDFLD(WS-RIDFLD)
+                     LENGTH(WS-RECLEN)
+                     RESP(WS-RESP)
+                END-EXEC
+                IF WS-RESP = DFHRESP(NORMAL)
+                   MOVE 'Y' TO CA-BROWSE-ON
+                      MOVE '** LAST RECORD**' TO WS-INQ-MSG
+                      PERFORM 7000-SEND-DETAIL
+                ELSE
+                   MOVE 'N' TO CA-BROWSE-ON
+                   MOVE 'ERROR READING LAST RECORD' TO WS-INQ-MSG
+                   PERFORM 7000-SEND-DETAIL
+                END-IF
+                STOP RUN.
+       5000-PREV-RECORD.
+                IF CA-BROWSE-ON = 'N'
+                   EXEC CICS ENDBR
+                        FILE('STUDENT1')
+                        RESP(WS-RESP)
+                    END-EXEC
+                END-IF
+                    MOVE CA-CURR-KEY  TO WS-RIDFLD
+                    EXEC CICS STARTBR
+                         FILE ('STUDENT1')
+                         RIDFLD(WS-RIDFLD)
+                         EQUAL
+                         RESP(WS-RESP)
+                    END-EXEC
+                    IF WS-RESP NOT = DFHRESP(NORMAL)
+                       MOVE 'CANNOT POSITION FOR PREV' TO WS-INQ-MSG
+                       PERFORM 7000-SEND-DETAIL
+                       STOP RUN
+                    END-IF
+
+                EXEC CICS READPREV
+                     FILE('STUDENT1')
+                     INTO(WS-STU-REC)
+                     RIDFLD(WS-RIDFLD)
+                     RESP(WS-RESP)
+                END-EXEC
+                 IF WS-RESP NOT = DFHRESP(NORMAL)
+                   MOVE 'CANNOT POSITION - BROWSE ERROR' TO WS-INQ-MSG
+                   MOVE 'N' TO CA-BROWSE-ON
+                   PERFORM 7000-SEND-DETAIL
+                   STOP RUN
+                 END-IF
+                EXEC CICS READPREV
+                     FILE('STUDENT1')
+                     INTO (WS-STU-REC)
+                     RIDFLD(WS-RIDFLD)
+                     LENGTH(WS-RECLEN)
+                     RESP(WS-RESP)
+                END-EXEC
+                EVALUATE WS-RESP
+                      WHEN DFHRESP(NORMAL)
+                      MOVE WS-RIDFLD TO CA-CURR-KEY
+                      MOVE 'PREVIOUS RECORD - PF7 FOR MORE '
+                         TO WS-INQ-MSG
+                      PERFORM 7000-SEND-DETAIL
+                      WHEN DFHRESP(ENDFILE)
+                      MOVE '** ALREADY AT FIRST RECORD **'
+                         TO WS-INQ-MSG
+                         MOVE 'N' TO CA-BROWSE-ON
+                         PERFORM 7000-SEND-DETAIL
+                         WHEN OTHER
+                         MOVE 'READPREV ERROR -PLEASE RETRY'
+                           TO WS-INQ-MSG
+                        PERFORM 7000-SEND-DETAIL
+                END-EVALUATE
+                STOP RUN.
+       6000-NEXT-RECORD.
+               IF CA-BROWSE-ON = 'N'
+                   EXEC CICS ENDBR
+                        FILE('STUDENT1')
+                        RESP(WS-RESP)
+                   END-EXEC
+               END-IF
+                   MOVE CA-CURR-KEY TO WS-RIDFLD
+                   EXEC CICS STARTBR
+                       FILE('STUDENT1')
+                       RIDFLD(WS-RIDFLD)
+                       GTEQ
+                       RESP (WS-RESP)
+                   END-EXEC
+                   IF WS-RESP NOT = DFHRESP(NORMAL)
+                      MOVE 'CANNOT POSITION FILE' TO WS-INQ-MSG
+                      PERFORM 7000-SEND-DETAIL
+                      STOP RUN
+                   END-IF
+                   EXEC CICS READNEXT
+                        FILE ('STUDENT1')
+                        INTO (WS-STU-REC)
+                        RIDFLD(WS-RIDFLD)
+                        LENGTH(WS-RECLEN)
+                        RESP(WS-RESP)
+                   END-EXEC
+
+               IF WS-RESP NOT = DFHRESP(NORMAL)
+                  MOVE 'END OF FILE REACHED' TO WS-INQ-MSG
+                  PERFORM 7000-SEND-DETAIL
+                  STOP RUN
+               END-IF
+               EXEC CICS READNEXT
+                    FILE ('STUDENT1')
+                    INTO (WS-STU-REC)
+                    RIDFLD (WS-RIDFLD)
+                    LENGTH (WS-RECLEN)
+                    RESP (WS-RESP)
+               END-EXEC
+               EVALUATE WS-RESP
+                   WHEN DFHRESP(NORMAL)
+                        MOVE 'Y' TO CA-BROWSE-ON
+                        MOVE WS-RIDFLD TO CA-CURR-KEY
+                        MOVE '**NEXT RECORD**' TO WS-INQ-MSG
+                        PERFORM 7000-SEND-DETAIL
+                   WHEN DFHRESP(ENDFILE)
+                        MOVE '**ALREADY AT LAST RECORD**' TO WS-INQ-MSG
+                        MOVE 'N' TO CA-BROWSE-ON
+                        PERFORM 7000-SEND-DETAIL
+                   WHEN OTHER
+                        MOVE 'READNEXT ERROR' TO WS-INQ-MSG
+                        PERFORM 7000-SEND-DETAIL
+               END-EVALUATE
+               STOP RUN.
+       7000-SEND-DETAIL.
+               MOVE LOW-VALUES  TO INQMAP1O
+               MOVE WS-FMTDATE TO IDATEO
+               MOVE WR-STUNUM TO ISTUNOO
+               MOVE WR-NAME    TO INAMEO
+               MOVE WR-ADDR    TO IADDRO
+               MOVE WR-SDATE   TO ISDATEO
+               MOVE WR-INSTNO  TO IINSTNOO
+               MOVE WR-STAT    TO ISTATO
+               MOVE WR-PDATE   TO IPDATEO
+               IF WS-INQ-MSG NOT = SPACES
+                  MOVE WS-INQ-MSG TO IMSGO
+                  MOVE SPACES TO WS-INQ-MSG
+               END-IF
+               MOVE -1 TO ISRCHNOL
+               EXEC CICS SEND
+                    MAP('INQMAP1')
+                    MAPSET('CAPST')
+                    FROM (INQMAP1O)
+                    CURSOR
+                    ERASE
+               END-EXEC
+               EXEC CICS RETURN
+                    TRANSID ('OZKQ')
+                    COMMAREA(WS-COMMAREA)
+                    LENGTH(LENGTH OF WS-COMMAREA)
+               END-EXEC.
+       8000-GET-DATE.
+            EXEC CICS ASKTIME
+                 ABSTIME (WS-ABSTIME)
+            END-EXEC
+            EXEC CICS FORMATTIME
+                 ABSTIME (WS-ABSTIME)
+                 DDMMYYYY(WS-FMTDATE)
+                 DATESEP('/')
+            END-EXEC.
+       9000-EXIT-TO-MENU.
+               IF CA-BROWSE-ON = 'Y'
+                  EXEC CICS ENDBR
+                       FILE('STUDENT1')
+                       RESP(WS-RESP)
+                  END-EXEC
+               END-IF
+               EXEC CICS XCTL PROGRAM('ACEMEN1') END-EXEC.
